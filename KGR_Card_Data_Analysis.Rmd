@@ -1,0 +1,963 @@
+---
+title: "Card 데이터 분석"
+author: "김광률"
+date: "2021년 2월 4일"
+output: html_document
+---
+
+
+#1_card_분석전 기본세팅
+
+###패키지 및 라이브러리
+```{r cars}
+library(dplyr)
+library(ggplot2)
+```
+
+###데이터 가지고 놀 폴더지정   
+```{r}
+#getwd()
+#setwd("C:/Users/GWANGRYUL/Desktop/스터디/카드/카드데이터1/data04")
+```
+
+
+###데이터 불러오기
+```{r}
+train <- read.csv("C:/Users/GWANGRYUL/Desktop/스터디/카드/카드데이터1/data04/train.csv")
+#test <- read.csv("test.csv")
+attach(train)
+#attach(test)
+
+```
+
+
+###오타수정
+```{r}
+colnames(train)[8] <- "holiday"
+#colnames(test)[8] <- "holiday"
+```
+
+
+###데이터 둘러보기
+```{r}
+names(train)
+#names(test)
+length(unique(train$store_id))
+#length(unique(test$store_id))
+head(train)
+```
+
+
+#2_전처리(시계열관련변수)
+
+
+##시계열 관련 변수들
+
+###연, 월, 일, 시, 분, 초 변수 추가
+
+```{r}
+train$year = as.numeric(substr(train$date, 1,4)) #년도만 숫자형태로 따옴
+train$month = as.numeric(substr(train$date, 6,7)) #월만 숫자형태로 따옴
+train$day = as.numeric(substr(train$date, 9,10)) #일만 숫자형태로 따옴
+train$hour = as.numeric(substr(train$time, 1,2)) #Hour만 숫자형태로 따옴
+train$min = as.numeric(substr(train$time, 4,5)) #Minute만 숫자형태로 따옴
+train$sec = as.numeric(substr(train$time, 7,8)) #Second만 숫자형태로 따옴
+head(train)
+```
+
+
+##각 스토어별 시간대별 거래빈도 (하루를 4시간*6개로 나누자)
+
+###각 스토어별 time
+2시-6시(새벽)
+
+6시-10시(아침&출근)
+
+10시-14시(낮&점심)
+
+14시-18시(오후&일과)
+
+18시-22시(저녁&퇴근이후)
+
+22시-2시(심야)
+```{r}
+
+hour1 = train %>% #2시~6시(새벽)
+  filter(amount >= 0) %>% filter(hour >=2 & hour<6) %>% 
+  group_by(store_id) %>% tally()
+
+hour2 = train %>% #6시~10시(아침&출근)
+  filter(amount >= 0) %>% filter(hour >=6 & hour<10) %>% 
+  group_by(store_id) %>% tally()
+
+hour3 = train %>% #10시~14시(낮&점심)
+  filter(amount >= 0) %>% filter(hour >=10 & hour<14) %>% 
+  group_by(store_id) %>% tally()
+hour4 = train %>% #14시~18시(오후&일과)
+  filter(amount >= 0) %>% filter(hour >=14 & hour<18) %>% 
+  group_by(store_id) %>% tally()
+
+hour5 = train %>% #18시~22시(저녁&퇴근이후)
+  filter(amount >= 0) %>% filter(hour >=18 & hour<22) %>% 
+  group_by(store_id) %>% tally()
+
+hour6 = train %>% #22시~2시(심야)
+  filter(amount >= 0) %>% filter(hour ==0|hour==1|hour==22|hour==23) %>% 
+  group_by(store_id) %>% tally()
+
+```
+
+
+
+
+###각 store별 월별 거래빈도 & 평균amount
+```{r}
+month_count = 
+  train %>% filter(!is.na(amount)) %>% filter(amount >=0) %>%
+  select(store_id, month) %>% 
+  group_by(store_id, month) %>% tally() 
+
+
+month_avg = 
+  train %>% filter(!is.na(amount)) %>% filter(amount >=0) %>%
+  select(store_id, month, amount) %>% 
+  group_by(store_id, month)  %>% summarise(mean_month = mean(amount))
+     
+```
+
+
+
+
+###각 store별 요일별 거래빈도 & 평균amount
+
+```{r}
+week_count =
+  train %>% select(store_id, month) %>% 
+  group_by(store_id, train$days_of_week) %>% tally() 
+colnames(week_count)[2] = 'days_of_week'
+
+week_avg = 
+  train %>% select(store_id, month, amount) %>% 
+  group_by(store_id, train$days_of_week)  %>% summarise(mean_month = mean(amount))
+colnames(week_avg)[2] = 'days_of_week'
+```
+
+
+###각 store별 공휴일/비공휴일별 거래빈도 & 평균amount
+```{r}
+holiday_count = 
+  train %>%
+  select(store_id, month) %>% 
+  group_by(store_id, train$holiday) %>% tally() 
+colnames(holiday_count)[2] = 'holiday'
+
+holiday_avg = 
+  train %>% 
+  select(store_id, month, amount) %>% 
+  group_by(store_id, train$holiday)  %>% summarise(mean_month = mean(amount))
+colnames(holiday_avg)[2] = 'holiday'
+
+```
+
+
+
+#3_전처리(store_id별 관련 변수들)
+
+###각 store별 빈도수 계산
+```{r}
+count = train %>% filter(!is.na(amount)) %>% filter(amount >= 0) %>%
+  group_by(store_id) %>% tally()
+head(count)
+```
+
+거래기록 1번인 가게들
+```{r}
+count[count$n==1,]
+```
+
+
+###각 store별 평균 amount양 계산
+```{r}
+
+avg = train %>% filter(!is.na(amount)) %>%
+  group_by(store_id) %>% summarize(avg = mean(amount))
+head(avg)
+
+```
+거래평균 제일 높은 가게
+```{r}
+avg[avg$avg==max(avg$avg),] #거래평균 제일 높은 가게
+```
+
+
+###각 store별 unique한 카드개수(고객수)
+```{r}
+uniq = train %>% select(store_id, card_id)
+uniq = unique(uniq) #중복행 제거
+uniq = uniq %>% group_by(store_id) %>% tally()
+head(uniq)
+```
+
+
+##할부
+```{r}
+train$installments[is.na(train$installments)] <- 0 #NA(할부X)를 0 으로 채우기
+
+```
+
+###store별 할부 빈도수
+
+```{r}
+installment_count = 
+  train %>% select(store_id, installments) %>%
+  filter(installments != 0) %>% 
+  group_by(store_id) %>% tally()
+```
+나중에 상대빈도로 바꿀필요가 있음(총 거래빈도수가 다르므로)
+
+
+###각 store별 평균할부개월수(할부를 한 사람만 계산했음, 일시불로 계산한 사람 제외)
+
+```{r}
+installment_avg = 
+  train %>% select(store_id, installments) %>%
+  filter(!is.na(installments)) %>% filter(installments != 0) %>%
+  group_by(store_id) %>% summarise(mean_install = mean(installments))
+```
+
+
+###각 store별 환불 빈도
+```{r}
+minus_amount = 
+  train %>% select(store_id, amount) %>%
+  filter(amount < 0) %>% group_by(store_id) %>% tally()
+```
+나중에 전체 n으로 나누기(상대도수로 봐야 유의미)
+
+
+
+##공휴일에 문 닫는 store찾기
+```{r}
+holiday_count
+
+holiday_running = 
+  holiday_count %>% select(store_id, train$holiday) %>%
+  group_by(store_id) %>% tally()
+
+
+holiday_close =
+  holiday_running %>% filter(n == 1) 
+
+holiday_open = 
+  holiday_running %>% filter(n == 2)
+```
+
+
+###주7일운영 store vs 주7일이하운영 store
+
+```{r}
+week_count
+week_running =
+  week_count %>% group_by(store_id) %>% tally()
+```
+
+####주7일운영
+```{r}
+week_open = 
+  week_running %>% filter(n == 7)
+```
+
+#####주7일운영X
+```{r}
+week_close =
+  week_running %>% filter(n != 7)
+```
+
+
+
+#4_변수 총정리
+```{r}
+head(train,20)
+count              #store별 거래빈도수
+avg                #store별 평균거래가격
+uniq               #store별 unique한 카드 개수(고객수)
+installment_count  #store별 할부한 고객수
+installment_avg    #store별 할부한 고객들의 평균 할부개월수
+minus_amount       #store별 환불한 고객수        
+
+month_count        #store별 월별 거래빈도
+month_avg          #store별 월별 평균거래가격
+
+hour1              #store별 2시~6시(새벽) 거래빈도
+hour2              #store별 6시~10시(아침&출근) 거래빈도
+hour3              #store별 10시~14시(낮&점심) 거래빈도
+hour4              #store별 14시~18시(오후&일과) 거래빈도
+hour5              #store별 18시~22시(저녁&퇴근이후) 거래빈도
+hour6              #store별 22시~2시(심야) 거래빈도
+
+holiday_count      #store별 공휴일/비공휴일 거래빈도수
+holiday_avg        #store별 공휴일/비공휴일 평균거래가격
+holiday_running
+holiday_open       #공휴일에도 영업하는 store
+holiday_close      #공휴일에 영업하지 않는 store
+
+week_count         #store별 요일별 거래빈도수
+week_avg           #store별 요일별 평균거래가격
+week_running
+week_open          #주7일 영업하는 store
+week_close         #주7일 미만 영업하는 store
+```
+
+
+
+
+```{r}
+A = left_join(count , avg, by = c("store_id"="store_id"))
+A = left_join(A , uniq, by = c("store_id"="store_id"))
+A = left_join(A , installment_count, by = c("store_id"="store_id"))
+A = left_join(A , installment_avg, by = c("store_id"="store_id"))
+A = left_join(A , minus_amount, by = c("store_id"="store_id"))
+#A = left_join(A , month_count, by = c("store_id"="store_id"))
+#A = left_join(A , month_avg, by = c("store_id"="store_id"))
+#A = left_join(A , holiday_count, by = c("store_id"="store_id"))
+#A = left_join(A , holiday_avg, by = c("store_id"="store_id"))
+A = left_join(A , holiday_open, by = c("store_id"="store_id"))
+A = left_join(A , holiday_close, by = c("store_id"="store_id"))
+#A = left_join(A , week_count, by = c("store_id"="store_id"))
+#A = left_join(A , week_avg, by = c("store_id"="store_id"))
+A = left_join(A , week_open, by = c("store_id"="store_id"))
+A = left_join(A , week_close, by = c("store_id"="store_id"))
+A = left_join(A , hour1, by = c("store_id"="store_id"))
+A = left_join(A , hour2, by = c("store_id"="store_id"))
+A = left_join(A , hour3, by = c("store_id"="store_id"))
+A = left_join(A , hour4, by = c("store_id"="store_id"))
+A = left_join(A , hour5, by = c("store_id"="store_id"))
+A = left_join(A , hour6, by = c("store_id"="store_id"))
+
+colnames(A) = c('store_id','count','avg','uniq','installment_count','installment_avg',
+                'minus_amount','holiday_open','holiday_close','week_open','week_close',
+                'hour2','hour6','hour10','hour14','hour18','hour22')
+result = A
+head(result,20)
+```
+
+
+
+
+
+#5_시각화
+
+```{r}
+#(추가)그래프 타이틀 붙여주기
+#+ggtitle("그래프 타이틀") +
+#  theme(plot.title = element_text(family = "serif", face = "bold", hjust = 0.5, size = 15, color = "darkblue")) 
+
+```
+
+
+
+##월
+###월별 거래빈도수
+```{r}
+M1 = train %>% group_by(month) %>% tally()
+M1$month = c('Jan', 'Feb', 'Mar','Apr','May','Jun', 'Jul','Aug', 'Sep', 'Oct','Nov','Dec')
+ggplot(data=M1, aes(x=month, y = n)) + geom_bar(stat = 'identity',fill ='orange1') +
+  scale_x_discrete(limits=M1$month)
+```
+
+###월별 평균거래가격
+```{r}
+
+M2 = train %>% group_by(month) %>% summarise(tot_mean = mean(amount))
+M2$month = c('Jan', 'Feb', 'Mar','Apr','May','Jun', 'Jul','Aug', 'Sep', 'Oct','Nov','Dec')
+ggplot(data=M2, aes(x=month, y = tot_mean)) + geom_bar(stat = 'identity',fill ='orange1')+
+  scale_x_discrete(limits=M2$month)
+```
+
+
+##요일
+###요일별 거래빈도수
+```{r}
+W1 = train %>% group_by(days_of_week) %>% tally()
+W1$days_of_week = c('Mon', 'Tue', 'Wen','Thu','Fri','Sat', 'Sun')
+ggplot(data=W1, aes(x=days_of_week, y = n)) + geom_bar(stat = 'identity', fill='salmon') +
+  scale_x_discrete(limits=W1$days_of_week)
+
+```
+
+
+###요일별 평균거래가격
+```{r}
+W2 = train %>% group_by(days_of_week) %>% summarise(tot_mean = mean(amount))
+W2$days_of_week = c('Mon', 'Tue', 'Wen','Thu','Fri','Sat', 'Sun')
+ggplot(data=W2, aes(x=days_of_week, y = tot_mean)) + geom_bar(stat = 'identity', fill= 'salmon') +
+  scale_x_discrete(limits=W2$days_of_week)
+```
+
+##공휴일/비공휴일
+###공휴일/비공휴일 거래빈도수
+```{r}
+
+H1 = train %>% group_by(holiday) %>% tally()
+H1$holiday = c('non-holiday','holiday')
+ggplot(data=H1, aes(x=holiday, y = n)) + geom_bar(stat = 'identity', fill= 'darkblue') +
+  scale_x_discrete(limits=H1$holiday)
+```
+
+####의미없음(평균으로보는게 맞음)
+
+```{r}
+h1 = train %>% select(date, holiday) %>% distinct() %>%
+  filter(holiday == 1) %>%  tally() #공휴일수
+h0 = train %>% select(date, holiday) %>% distinct() %>% 
+  filter(holiday == 0) %>%  tally() #비공휴일수
+H1$n = H1$n/c(as.numeric(h0),as.numeric(h1))
+ggplot(data=H1, aes(x=holiday, y = n)) + geom_bar(stat = 'identity', fill= 'darkblue') +
+  scale_x_discrete(limits=H1$holiday)
+```
+
+
+###공휴일/비공휴일 평균거래가격
+```{r}
+H2 = train %>% group_by(holiday) %>% summarise(tot_mean = mean(amount))
+H2$holiday = c('non-holiday','holiday')
+ggplot(data=H2, aes(x=holiday, y = tot_mean)) + geom_bar(stat = 'identity', fill= 'darkblue') +
+  scale_x_discrete(limits=H2$holiday)
+```
+
+
+##시간대
+###시간대별 거래빈도수
+```{r}
+T1 = train %>% group_by(hour) %>% tally()
+ggplot(data=T1, aes(x=hour, y = n)) + geom_bar(stat = 'identity', fill="royalblue") +
+  scale_x_discrete(limits=T1$hour)
+
+```
+
+
+###시간대별 평균거래가격
+```{r}
+T2 = train %>% group_by(hour) %>% summarise(tot_mean = mean(amount))
+ggplot(data=T2, aes(x=hour, y = tot_mean)) + geom_bar(stat = 'identity',fill='royalblue')+
+  scale_x_discrete(limits=T2$hour) 
+```
+
+
+##환불 경향성
+###store별 환불비율
+
+```{r}
+hwan = result %>% select(store_id, count, minus_amount) 
+hwan[is.na(hwan)] = 0
+hwan$minus_amount_p = hwan$minus_amount/hwan$count*100
+ggplot(data=hwan, aes(x=store_id, y = minus_amount_p)) + geom_bar(stat = 'identity', fill='skyblue') +
+  scale_x_discrete(limits=hwan$store_id)
+```
+
+```{r}
+ggplot(data=hwan, aes(x=minus_amount_p)) + geom_histogram(binwidth = 1,color = 'black', fill = 'skyblue')
+```
+
+x축:평균환불비율, y축:store의 개수 
+
+보통 환불 안하는 경우가 많은듯하다.
+
+####로그 씌워봄
+```{r}
+ggplot(data=hwan, aes(x=log(minus_amount_p))) + geom_histogram(binwidth = 0.1,color = 'black', fill = 'skyblue')
+```
+
+정규분포와 비슷한 꼴을 보이는 것을 관찰 할 수 있었다.
+
+
+##할부 경향성
+###store별 평균할부 개월수 
+```{r}
+hal = result %>% select(store_id, installment_count, installment_avg) 
+hal[is.na(hal)] = 1
+ggplot(data=hal, aes(x=store_id, y = installment_avg)) + geom_bar(stat = 'identity', fill='green') +
+  scale_x_discrete(limits=hal$store_id) 
+```
+
+```{r}
+ggplot(data=hal, aes(x=installment_avg)) + geom_histogram(binwidth = 1,color = 'black', fill = 'green')
+```
+
+x축:평균할부개월수, y축:store의 개수 
+
+보통 일시불(1)과 3개월이 많음
+
+####로그 씌워봄
+```{r}
+
+ggplot(data=hal, aes(x=log(installment_avg))) + geom_histogram(binwidth = 0.1,color = 'black', fill = 'green')
+
+```
+
+
+#6_군집분석
+
+###패키지 라이브러리 설치
+```{r}
+#install.packages("NbClust")
+library(NbClust)
+
+```
+
+####result데이터셋의 NA값을 0으로 대체한 데이터셋 result0하나 만들어줌(나중에 사용)
+
+```{r}
+result0 = result
+result0[is.na(result0)] = 0
+```
+
+
+##군집분석을 위해 변수 전처리
+1. uniq -> uniq/count * 100 (전체결제대비 unique한 고객 비율)
+
+2. installment_count 삭제
+
+3. minus_amount -> minus_amount/count * 100 (전체결제대비 환불결제 비율)
+
+4. hour -> hour/count*100 (시간대별 결제 비율)
+
+
+```{r}
+clus = result
+clus[is.na(clus)] = 0 #결측치 0으로 대체
+clus$uniq_p = clus$uniq/clus$count*100
+clus$minus_amount_p = clus$minus_amount/clus$count*100
+clus$hour2_p = clus$hour2/clus$count*100
+clus$hour6_p = clus$hour6/clus$count*100
+clus$hour10_p = clus$hour10/clus$count*100
+clus$hour14_p = clus$hour14/clus$count*100
+clus$hour18_p = clus$hour18/clus$count*100
+clus$hour22_p = clus$hour22/clus$count*100
+
+clus = clus[,c(1,2,3,6,8,9,10,11,18:25)] #필요한 변수들만 선택
+head(clus)
+```
+
+
+###군집분석을 위해 데이터 컬럼별 정규화(평균:0, 표준편차:1)
+```{r}
+
+clus_scale = scale(clus[,-1]) #store는 군집분석할때는 잠깐 빼줘야함
+clus_scale = as.data.frame(clus_scale)
+```
+
+
+###데이터 형태 중간점검
+```{r}
+head(clus,20)
+head(clus_scale,20)
+```
+
+
+
+##Ward 군집분석(군집간 거리를 최대로, 군집의개수를 최대한 고르게 분포할 수 있도록 하기 위해서)
+```{r}
+d = dist(clus_scale)
+fit.ward = hclust(d, method='ward.D')
+```
+
+
+###트리모형 그려보기
+```{r}
+par(mfrow=c(1,1))
+plot(fit.ward,hang=-1,cex=.8,main="Ward Clustering")
+```
+
+
+###몇개의 군집으로 나눌것인가?
+```{r}
+devAskNewPage(ask=TRUE)
+nc=NbClust(clus_scale[,c(1,2,3,4,6,7,8,9,10,11,12,13,14)], distance="euclidean", min.nc=2, max.nc=15, method="ward.D")
+```
+
+
+무한행렬 오류로 인하여 
+
+5번째변수(holiday_close) : 6번째변수로 설명이됨(자유도, 배반관계)
+
+
+15번째변수(hour22_p) : 11,12,13,14변수로 설명이됨 (자유도 문제)는 제외하였음
+
+###위에서 나온 그래프들을 토대로 군집을 8개로 정함
+
+###8개로 나눈 군집분석
+```{r}
+clusters <- cutree(fit.ward,k=8)
+table(clusters)
+
+cluster_result = cbind(clusters, clus) #군집분석이 포함된 데이터
+head(cluster_result)
+```
+
+
+###트리구조그림에서의 나뉜 군집의 시각화
+```{r}
+
+par(mfrow=c(1,1))
+plot(fit.ward,hang=-1, cex=.8, main="Ward Linkage Clustering\n8 Cluster Solution")
+rect.hclust(fit.ward,k=8)
+```
+
+
+
+###군집별 기초통계량보기
+```{r}
+g_median = aggregate(clus[,-1],by=list(cluster=clusters),median)
+g_mean = aggregate(clus[,-1],by=list(cluster=clusters),mean)
+g_max = aggregate(clus[,-1],by=list(cluster=clusters),max)
+g_min = aggregate(clus[,-1],by=list(cluster=clusters),min)
+
+#aggregate(as.data.frame(clus),by=list(cluster=clusters),median) 정규화된데이터셋의의 군집통계량
+```
+
+
+
+
+###군집별 기초통계량을 바탕으로 8개 군집의 특성을 잡아보자
+```{r}
+g_median
+g_mean
+g_max
+g_min
+
+```
+
+
+
+#7_군집별 시각화
+
+###군집분석의 결과 + 백분율로 수정한 store별 데이터
+
+```{r}
+head(cluster_result)
+```
+
+###군집별 store개수
+
+```{r}
+table(cluster_result$clusters)
+```
+
+###군집별 기초 통계량
+```{r}
+g_median
+g_mean
+g_max
+g_min
+
+```
+
+
+###군집분석 변수별 pair 그래프
+```{r}
+par(mfrow=c(1,1))
+pairs(cluster_result, main = "군집분석 변수별 pair 그래프",
+      pch = 21, bg = c('red','orange','yellow','green','blue','darkblue','purple','pink')[unclass(cluster_result$clusters)])
+```
+
+
+
+
+
+###군집별로 데이터를 만들고 변수들의 분포를 보자
+
+```{r}
+#그룹1
+g1 = cluster_result %>% filter(clusters==1)
+#그룹2
+g2 = cluster_result %>% filter(clusters==2)
+#그룹3
+g3 = cluster_result %>% filter(clusters==3)
+#그룹4
+g4 = cluster_result %>% filter(clusters==4)
+#그룹5
+g5 = cluster_result %>% filter(clusters==5)
+#그룹6
+g6 = cluster_result %>% filter(clusters==6)
+#그룹7
+g7 = cluster_result %>% filter(clusters==7)
+#그룹8
+
+```
+
+
+
+
+
+##군집간 변수별로 레이더 그래프 만들기(군집의 특징을 찾아보자)
+```{r}
+#install.packages("fmsb")
+library(fmsb)
+```
+
+
+
+###레이더 그래프를 만들어주기 위해서는 첫행에는 각 열의 최대값 두번째열에는 각 열의최소값이 필요함 그 작업을 해주기 위한 함수
+
+```{r}
+# manipulating dataset for radar chart
+
+  # data frame includes possible maximum values as row 1 
+  # and possible minimum values as row 2
+  df_radarchart <- function(df) {
+     df <- data.frame(df)
+     dfmax <- apply(df, 2, max) 
+     dfmin <- apply(df, 2, min) 
+     as.data.frame(rbind(dfmax, dfmin, df))
+    }
+# maximum value as row 1, minimum value as row 2 : user-defined function df_radarchart
+# standardization : scale()
+```
+
+
+###군집별 색정해주기
+```{r}
+colors_in=c(rgb(1,0,0,0.4), rgb(0,1,0,0.4) , rgb(0,0,1,0.4) , rgb(1,1,0,0.4), rgb(1,0,1,0.4) , rgb(0,1,1,0.4), rgb(0.4,0.7,0.4,0.4) , rgb(0.4,0.2,0.2,0.4) )
+colors_border=c(rgb(1,0,0,0.9), rgb(0,1,0,0.9) , rgb(0,0,1,0.9) , rgb(1,1,0,0.9), rgb(1,0,1,0.9) , rgb(0,1,1,0.9), rgb(0.4,0.7,0.4,0.9) , rgb(0.4,0.2,0.2,0.9) )
+```
+
+
+##평균(g_mean)
+###군집들의 일반적(거래내역) 특징 - 평균값   
+```{r}
+g_mean1 <- df_radarchart(scale(g_mean[,c(2,3,4,9,10)]))
+
+radarchart(g_mean1,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1 ) 
+
+legend(x=1.5, y=1, legend = rownames(g_mean1[-c(9,10),]), bty = "n", pch=20 ,text.col = "grey", cex=1.2, pt.cex=3,col=colors_border)
+
+```
+
+###군집들의 공휴일/주중주말 오픈 유무값 - 평균값
+```{r}
+g_mean2 <- df_radarchart(scale(g_mean[,c(5,6,7,8)]))
+
+radarchart(g_mean2,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1 ) 
+
+legend(x=1.5, y=1, legend = rownames(g_mean2[-c(9,10),]), bty = "n", pch=20 ,text.col = "grey", cex=1.2, pt.cex=3,col=colors_border)
+
+```
+
+###군집들의 시간대별 특징값 - 평균값
+```{r}
+g_mean3 <- df_radarchart(scale(g_mean[,c(11:16)]))
+
+radarchart(g_mean3,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1 ) 
+
+legend(x=1.5, y=1, legend = rownames(g_mean3[-c(9,10),]), bty = "n", pch=20 ,text.col = "grey", cex=1.2, pt.cex=3,col=colors_border)
+
+```
+
+
+##중앙값(g_median)
+###군집들의 일반적(거래내역) 특징 - 중앙값
+```{r}
+g_median1 <- df_radarchart(scale(g_median[,c(2,3,4,9,10)]))
+
+radarchart(g_median1,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1 ) 
+
+legend(x=1.5, y=1, legend = rownames(g_median1[-c(9,10),]), bty = "n", pch=20 ,text.col = "grey", cex=1.2, pt.cex=3,col=colors_border)
+
+```
+
+###군집들의 공휴일/주중주말 오픈 유무 - 중앙값
+```{r}
+g_median2 <- df_radarchart(scale(g_median[,c(5,6,7,8)]))
+
+radarchart(g_median2,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1 ) 
+
+legend(x=1.5, y=1, legend = rownames(g_median2[-c(9,10),]), bty = "n", pch=20 ,text.col = "grey", cex=1.2, pt.cex=3,col=colors_border)
+
+```
+
+###군집들의 시간대별 특징 - 중앙값
+```{r}
+g_median3 <- df_radarchart(scale(g_median[,c(11:16)]))
+
+radarchart(g_median3,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1 ) 
+
+legend(x=1.5, y=1, legend = rownames(g_median3[-c(9,10),]), bty = "n", pch=20 ,text.col = "grey", cex=1.2, pt.cex=3,col=colors_border)
+
+```
+
+
+##평균값으로 봤을때의 특징 vs 중앙값으로 보았을때의 특징
+
+
+###군집들의 일반적(거래내역) 특징 - 평균값 vs 중앙값
+```{r}
+par(mfrow= c(1,2))
+radarchart(g_mean1,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1, title = "평균값" ) 
+radarchart(g_median1,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1, title = "중앙값" ) 
+```
+
+
+###군집들의 공휴일/주중주말 오픈 유무 - 평균값 vs 중앙값
+```{r}
+par(mfrow= c(1,2))
+radarchart(g_mean2,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1, title = "평균값" ) 
+radarchart(g_median2,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1, title = "중앙값" ) 
+```
+
+
+###군집들의 시간대별 특징 - 평균값 vs 중앙값
+```{r}
+par(mfrow= c(1,2))
+radarchart(g_mean3,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1, title = "평균값" ) 
+radarchart(g_median3,pfcol=colors_in, pcol=colors_border, plwd=4 , plty=1, title = "중앙값") 
+```
+
+###레이더 차트의 개형이 비슷한 경우
+
+- 군집들의 공휴일/주중주말 오픈 유무
+
+- 군집들의 시간대별 특징 - 평균값 vs 중앙값
+
+###레이더 차트의 개형이 다른 경우
+
+- 군집들의 일반적(거래내역) 특징 - 평균값 vs 중앙값
+
+###즉, 일반적(거래내역)의 차이만 조금 보정해가면서 군집들을 예측해보자.
+
+
+
+
+#8_군집예측
+
+##군집별 특징 정리 및 예측
+
+###1군집 예측: 편의점, 카페/베이커리
+1.거래빈도(count)가 매우 많음
+
+2.평균거래가격(avg)가 매우낮음
+
+3.단골고객비율(uniq_p)이 매우 높음
+
+4.공휴일 open
+
+5.주말 open
+
+6.10시~18시 고르게 분포
+
+
+
+###2군집 예측: 병원/의료/약품
+1.거래빈도(count)가 매우 적음
+
+2.평균거래가격(avg)가 높음
+
+3.단골고객비율(uniq_p)이 낮음 - (중앙값에서만 나타남)
+
+4.환불(minus_amount_p)을 하지않음 - (중앙값에서만 나타남)
+
+5.공휴일 close
+
+6.(대부분)주말 close
+
+1위: 14시~18시
+
+2위: 10시~14시, 18시~22시
+
+
+###3군집 예측: 가정생활/서비스/기타
+1.거래빈도(count)가 적음 - (중앙값에서만 나타남)
+
+2.공휴일 open
+
+3.주말 close
+
+4.1위: 14시~18시
+
+5.2위: 10시~14시, 18시~22시
+
+###4군집 예측: 식당(한식/일식/중식/양식/패스트푸드)
+1.거래빈도(count)가 많음
+
+2.평균거래가격(avg)이 매우낮음
+
+3.평균할부개월수(installment_avg)가 매우 낮음
+
+4.환불비율(minus_amount_p)이 낮음
+
+5.공휴일 open
+
+6.주말 open
+
+7.1위: 18시~22시
+
+8.2위: 10시~14시
+
+9.3위: 14시~18시
+
+
+###5군집 예측: 서점/문구, 학원/교육
+1.평균할부개월수(installment_avg)가 매우 높음
+
+2.공휴일 open
+
+3.주말 open
+
+4.1위: 14시~18시(42%)
+
+5.2위: 10시~14시, 18시~22시
+
+
+###6군집 예측: 주유소, 미용/뷰티
+1.평균거래가격(avg)이 낮음
+
+2.단골고객비율(uniq_p)이 낮음
+
+3.환불(minus_amount_P)비율이 낮음 - (중앙값에서만 나타남)
+
+4.공휴일 open
+
+5.주말 open
+
+6.1위: 18시~22시(52%)
+
+7.2위: 22시~2시
+
+
+
+###7군집 예측: 유흥(술집, 클럽), 유통(도매시장)
+1.환불(minus_amount_P)비율이 낮음 - (중앙값에서만 나타남)
+
+2.공휴일 open
+
+3.주말 open
+
+4.1위: 22시~2시(60%)
+
+5.2위: 2시~6시
+
+
+
+###8군집 예측: 귀금속(?)중앙값과 평균값의 차이가 많은것으로 보아 분포가 다양함을 알 수 있다. 여러 업종이 섞였을 가능성이 많다.
+1.평균거래가격(avg)가 매우 높음 - (평균값에서만 나타남)
+
+2.환불비율(minus_amount_p)이 매우매우높음
+
+3.거래빈도(count)가 매우매우 적음 - (중앙값에서만 나타남)
+
+4.할부(installment_avg)를 하지 않음 - (중앙값에서만 나타남)
+
+5.단골고객비율(uniq_p)이 높음 - (중앙값에서만 나타남)
+
+6.공휴일 open/close반반
+
+7.(대부분)주말 close
+
+8.1위: 10시~14시
+
+9.2위: 14시~18시
+
+10.3위: 6시~10시
+
+11.4위: 18시~22시
+
